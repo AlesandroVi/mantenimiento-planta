@@ -1,0 +1,38 @@
+name: Mantener activa la base de la demo
+
+# Supabase (plan gratis) pausa el proyecto si no recibe pedidos durante 7 días.
+# Este workflow hace una consulta chica a la API cada 2 días para que la demo
+# no se apague. Usa las mismas variables del repositorio que pages.yml
+# (Settings > Secrets and variables > Actions > Variables).
+# La clave publicable es pública por diseño: la seguridad la dan las políticas RLS.
+
+on:
+  schedule:
+    - cron: '23 14 */2 * *'   # cada 2 días a las 14:23 UTC (11:23 de Argentina)
+  workflow_dispatch:           # para correrlo a mano desde la pestaña Actions
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultar la base
+        env:
+          SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          SUPABASE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          # Sin sesión, RLS no deja leer filas (devuelve una lista vacía),
+          # pero la consulta igual llega a la base y cuenta como actividad.
+          codigo=$(curl -s -o respuesta.txt -w "%{http_code}" \
+            "$SUPABASE_URL/rest/v1/equipos?select=id&limit=1" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY")
+          echo "Respuesta de Supabase: $codigo"
+          cat respuesta.txt; echo
+          # Si la base está pausada o caída, el workflow falla y GitHub te avisa por mail.
+          if [ "$codigo" -ge 500 ] || [ "$codigo" = "000" ]; then
+            echo "La base no respondió. Revisá si el proyecto quedó pausado en Supabase."
+            exit 1
+          fi
